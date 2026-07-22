@@ -21,10 +21,16 @@ M.config = {
 M.notes = {}
 
 local function place_note(buf, note)
-    local note_id = vim.api.nvim_buf_set_extmark(buf, ns, note.lnum - 1, 0, {
+    local opts = {
         virt_text = { { M.config.symbol, M.config.highlight } },
         virt_text_pos = "eol",
-    })
+    }
+
+    if note.note_id then
+        opts.id = note.note_id
+    end
+
+    local note_id = vim.api.nvim_buf_set_extmark(buf, ns, note.lnum - 1, 0, opts)
     note.note_id = note_id
 end
 
@@ -139,6 +145,22 @@ function M.edit_note(note)
 
             vim.cmd("redraw")
             vim.notify("Note updated", vim.log.levels.INFO)
+        else
+            if note.note_id then
+                vim.api.nvim_buf_del_extmark(current_buf, ns, note.note_id)
+            end
+
+            for i, v in ipairs(M.notes) do
+                if v == note then
+                    table.remove(M.notes, i)
+                    break
+                end
+            end
+
+            M.save_notes()
+
+            vim.cmd("redraw")
+            vim.notify("Note deleted", vim.log.levels.INFO)
         end
     end, { buffer = float_buf, silent = true })
 
