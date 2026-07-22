@@ -111,29 +111,37 @@ local function open_floating_window()
     return buf, win
 end
 
+local function edit_in_floating_window(initial_text, on_submit)
+    local float_buf, float_win = open_floating_window()
+
+    if initial_text then
+        vim.api.nvim_buf_set_lines(float_buf, 0, -1, false, { initial_text })
+        vim.api.nvim_win_set_cursor(float_win, { 1, #initial_text })
+    end
+
+    vim.cmd(initial_text and "startinsert!" or "startinsert")
+
+    vim.keymap.set("i", "<CR>", function()
+        local lines = vim.api.nvim_buf_get_lines(float_buf, 0, -1, false)
+        local text = table.concat(lines, " "):gsub("^%s*(.-)%s*$", "%1")
+
+        vim.api.nvim_win_close(float_win, true)
+        vim.cmd("stopinsert")
+        on_submit(text)
+    end, { buffer = float_buf, silent = true })
+
+    vim.keymap.set({ "n", "i" }, "<Esc>", function()
+        vim.api.nvim_win_close(float_win, true)
+        vim.cmd("stopinsert")
+    end, { buffer = float_buf, silent = true })
+end
+
 ----------------------------------------------------------
 -- Edit already existsing note
 ----------------------------------------------------------
 function M.edit_note(note)
     local current_buf = vim.api.nvim_get_current_buf()
-    local float_buf, float_win = open_floating_window()
-
-    -- Fill floating buffer with the existing note text
-    vim.api.nvim_buf_set_lines(float_buf, 0, -1, false, { note.note })
-
-    -- Move cursor to the end of the text and enter insert mode
-    local text_len = string.len(note.note)
-    vim.api.nvim_win_set_cursor(float_win, { 1, text_len })
-    vim.cmd("startinsert!")
-
-    -- Save changes on Enter
-    vim.keymap.set("i", "<CR>", function()
-        local lines = vim.api.nvim_buf_get_lines(float_buf, 0, -1, false)
-        local updated_text = table.concat(lines, " "):gsub("^%s*(.-)%s*$", "%1")
-
-        vim.api.nvim_win_close(float_win, true)
-        vim.cmd("stopinsert")
-
+    edit_in_floating_window(note.note, function(updated_text)
         if updated_text ~= "" then
             -- Update reference properties
             note.note = updated_text
@@ -162,13 +170,7 @@ function M.edit_note(note)
             vim.cmd("redraw")
             vim.notify("Note deleted", vim.log.levels.INFO)
         end
-    end, { buffer = float_buf, silent = true })
-
-    -- Cancel changes on Escape
-    vim.keymap.set({ "n", "i" }, "<Esc>", function()
-        vim.api.nvim_win_close(float_win, true)
-        vim.cmd("stopinsert")
-    end, { buffer = float_buf, silent = true })
+    end)
 end
 
 ------------------------------------------------------------
@@ -189,19 +191,7 @@ function M.add_note()
         end
     end
 
-    local float_buf, float_win = open_floating_window()
-
-    vim.cmd("startinsert")
-
-    vim.keymap.set("i", "<CR>", function()
-        local lines = vim.api.nvim_buf_get_lines(float_buf, 0, -1, false)
-        local note = table.concat(lines, " "):gsub("^%s*(.-)%s*$*", "%1")
-
-        vim.api.nvim_win_close(float_win, true)
-        vim.cmd("stopinsert")
-
-        -- Prompt for note
-
+    edit_in_floating_window(nil, function(note)
         if note ~= "" then
             -- Save note
             local note_text = M.config.symbol .. " " .. note
@@ -214,12 +204,7 @@ function M.add_note()
             vim.cmd("redraw")
             vim.notify("Note added", vim.log.levels.INFO)
         end
-    end, { buffer = float_buf, silent = true })
-
-    vim.keymap.set({ "n", "i" }, "<Esc>", function()
-        vim.api.nvim_win_close(float_win, true)
-        vim.cmd("stopinsert")
-    end, { buffer = float_buf, silent = true })
+    end)
 end
 
 ------------------------------------------------------------
