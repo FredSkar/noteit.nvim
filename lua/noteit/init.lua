@@ -85,7 +85,7 @@ vim.api.nvim_create_autocmd("VimLeavePre", {
 ------------------------------------------------------------
 -- Window for a note
 ------------------------------------------------------------
-local function open_floating_window()
+local function open_floating_window(title)
     local buf = vim.api.nvim_create_buf(false, true)
 
     local stats = vim.api.nvim_list_uis()[1]
@@ -102,7 +102,7 @@ local function open_floating_window()
         col = col,
         style = "minimal",
         border = "rounded",
-        title = " Note ",
+        title = " " .. title .. " ",
         title_pos = "center",
     }
 
@@ -111,8 +111,11 @@ local function open_floating_window()
     return buf, win
 end
 
+------------------------------------------------------------
+-- Edit note in floating window
+------------------------------------------------------------
 local function edit_in_floating_window(initial_text, on_submit)
-    local float_buf, float_win = open_floating_window()
+    local float_buf, float_win = open_floating_window("Note")
 
     if initial_text then
         vim.api.nvim_buf_set_lines(float_buf, 0, -1, false, { initial_text })
@@ -136,11 +139,83 @@ local function edit_in_floating_window(initial_text, on_submit)
     end, { buffer = float_buf, silent = true })
 end
 
+------------------------------------------------------------
+-- List notes in floating window
+------------------------------------------------------------
+local function list_notes_floating()
+    local float_buf, float_win = open_floating_window("Notes List")
+
+    local displayed_notes = {}
+
+    local function refresh()
+        displayed_notes = {}
+
+        local lines = {}
+        for i, note in ipairs(M.notes) do
+            displayed_notes[i] = note
+            table.insert(lines, string.format("%d. %s:%d %s", i, note.filename, note.lnum, note.note or ""))
+        end
+
+        vim.bo[float_buf].modifiable = true
+        vim.api.nvim_buf_set_lines(float_buf, 0, -1, false, lines)
+        vim.bo[float_buf].modifiable = false
+    end
+
+    refresh()
+    vim.bo[float_buf].modifiable = false
+    vim.bo[float_buf].bufhidden = "wipe"
+
+    local function get_selected_note()
+        local row = vim.api.nvim_win_get_cursor(float_win)[1]
+        return displayed_notes[row]
+    end
+
+    vim.keymap.set("n", "<CR>", function()
+        local note = get_selected_note()
+        if not note then
+            return
+        end
+
+        vim.api.nvim_win_close(float_win, true)
+        M.edit_note(note)
+    end, { buffer = float_buf, silent = true })
+
+    vim.keymap.set("n", "dd", function()
+        local note = get_selected_note()
+        if not note then
+            return
+        end
+
+        local target_buf = vim.fn.bufnr(note.filename)
+        if target_buf > 0 then
+            sync_notes_for_buf(target_buf)
+        end
+
+        for i, v in ipairs(M.notes) do
+            if v == note then
+                table.remove(M.notes, i)
+                break
+            end
+        end
+
+        if target_buf > 0 and note.note_id then
+            vim.api.nvim_buf_del_extmark(target_buf, ns, note.note_id)
+        end
+
+        M.save_notes()
+        refresh()
+    end, { buffer = float_buf, silent = true })
+
+    vim.keymap.set({ "n", "i" }, "<Esc>", function()
+        vim.api.nvim_win_close(float_win, true)
+    end, { buffer = float_buf, silent = true })
+end
+
 ----------------------------------------------------------
 -- Edit already existsing note
 ----------------------------------------------------------
 function M.edit_note(note)
-    local current_buf = vim.api.nvim_get_current_buf()
+    local current_buf = vim.fn.bufnr(note.filename)
     edit_in_floating_window(note.note, function(updated_text)
         if updated_text ~= "" then
             -- Update reference properties
@@ -148,13 +223,15 @@ function M.edit_note(note)
             note.text = M.config.symbol .. " " .. updated_text
 
             -- Redraw sign/extmark in the source buffer
-            place_note(current_buf, note)
+            if current_buf > 0 and vim.api.nvim_buf_is_loaded(current_buf) then
+                place_note(current_buf, note)
+            end
             M.save_notes()
 
             vim.cmd("redraw")
             vim.notify("Note updated", vim.log.levels.INFO)
         else
-            if note.note_id then
+            if current_buf > 0 and note.note_id and vim.api.nvim_buf_is_loaded(current_buf) then
                 vim.api.nvim_buf_del_extmark(current_buf, ns, note.note_id)
             end
 
@@ -260,8 +337,7 @@ end
 -- Show notes in quickfix
 ------------------------------------------------------------
 function M.show_notes()
-    vim.fn.setqflist(M.notes)
-    vim.cmd("copen")
+    list_notes_floating()
 end
 
 ------------------------------------------------------------
