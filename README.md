@@ -22,6 +22,10 @@ return {
     require("noteit").setup({
       symbol = "🔖",
       highlight = "Todo",
+      window_style = {
+        width = 0.6,
+        height = 0.2,
+      },
     })
   end,
 }
@@ -31,6 +35,7 @@ return {
 - `symbol` - The symbol to use for the note mark.
 - `highlight` - The highlight group to use for the note mark (from Neovim [group names](https://neovim.io/doc/user/syntax/#group-name)). Use `Ignore` to disable highlighting.
 - `notes_file` - The file to store the notes in. Defaults to a `noteit` folder under Neovim's data directory.
+- `window_style`- Set the floating window style scaling value.
 
 ## :scroll: Usage
 - `:NoteAdd` - Add a note to the current line.
