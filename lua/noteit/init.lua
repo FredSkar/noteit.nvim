@@ -1,8 +1,7 @@
-
 local M = {}
 
 -- Namespace for virtual text as the directiry where nvim was launched.
-local path_hash = vim.fn.sha256(vim.fn.getcwd()):sub(1,16)
+local path_hash = vim.fn.sha256(vim.fn.getcwd()):sub(1, 16)
 local ns = vim.api.nvim_create_namespace(path_hash)
 local augroup = vim.api.nvim_create_augroup("notes_" .. path_hash, { clear = true })
 
@@ -67,7 +66,7 @@ function M.setup(opts)
 
         vim.fn.delete(M.config.notes_file)
         vim.fn.delete(dir, "d")
-     end
+      end
     end,
   })
 end
@@ -100,7 +99,7 @@ function M.add_note()
       table.insert(M.notes, tmp_note)
 
       M.save_notes()
---      vim.notify("Note added", vim.log.levels.INFO)
+      --      vim.notify("Note added", vim.log.levels.INFO)
     end
   end)
 end
@@ -138,8 +137,7 @@ function M.show_note()
 
   for _, note in ipairs(M.notes) do
     if note.filename == file and note.lnum == line then
-      local note = note.note or ""
-      vim.ui.input({ prompt = "Note: ", default = note }, function(new_note)
+      vim.ui.input({ prompt = "Note: ", default = note.note }, function(new_note)
         if new_note then
           note.note = new_note
           note.text = M.config.symbol .. " " .. (new_note ~= "" and new_note or "Note")
