@@ -11,7 +11,6 @@ local augroup = vim.api.nvim_create_augroup("notes_" .. path_hash, { clear = tru
 local defaults = {
   symbol = "🔖",
   highlight = "Todo",
-  base_dir = vim.fn.getcwd(),
   notes_file = vim.fn.stdpath("data") .. "/noteit/" .. path_hash .. ".json",
   file_preview = true,
   list_note_preview = true,
@@ -88,7 +87,7 @@ local function sync_all_loaded_notes()
 end
 
 local function relative_note_filename(filename)
-  return vim.fs.relpath(M.config.base_dir, filename) or filename
+  return vim.fs.relpath(vim.fn.getcwd(), filename) or filename
 end
 
 local function find_note(filename, lnum)
@@ -158,7 +157,9 @@ end
 -- Setup function for user configuration
 ------------------------------------------------------------
 function M.setup(opts)
-  M.config = vim.tbl_deep_extend("force", {}, defaults, opts or {})
+  local config_opts = vim.deepcopy(opts or {})
+  config_opts.base_dir = nil
+  M.config = vim.tbl_deep_extend("force", {}, defaults, config_opts)
   M.load_notes()
 end
 
