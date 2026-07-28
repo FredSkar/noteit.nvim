@@ -231,6 +231,9 @@ function M.controller(opts)
     end
 
     self.closed = true
+    if opts.on_close then
+      opts.on_close()
+    end
     M.close(self.panes)
     M.close({ self.pane })
     pcall(vim.api.nvim_del_augroup_by_id, self.group)

@@ -20,6 +20,7 @@ function M.open(deps)
   local cached_filename
   local cached_file_lines
   local controller
+  local session = {}
 
   local function file_lines(filename)
     if filename ~= cached_filename then
@@ -59,11 +60,6 @@ function M.open(deps)
     })
   end
 
-  local function close_previews()
-    floating.close({ panes.note_preview, panes.code_preview })
-    panes.note_preview, panes.code_preview = nil, nil
-  end
-
   local function sync_selected_previews()
     if not vim.api.nvim_win_is_valid(panes.list.win) then
       controller:close()
@@ -74,7 +70,8 @@ function M.open(deps)
     render_note_list(selected_row)
 
     if not note then
-      close_previews()
+      floating.close({ panes.note_preview, panes.code_preview })
+      panes.note_preview, panes.code_preview = nil, nil
       return
     end
 
@@ -131,8 +128,8 @@ function M.open(deps)
     end
 
     if #displayed_notes == 0 then
-      render_note_list()
-      close_previews()
+      vim.notify("No notes available", vim.log.levels.WARN)
+      controller:close()
       return
     end
 
@@ -151,6 +148,7 @@ function M.open(deps)
 
   controller = floating.controller({
     panes = panes,
+    on_close = deps.on_close,
     on_resize = function()
       layout = floating.list_layout(
         config.window_style,
@@ -167,6 +165,17 @@ function M.open(deps)
   })
 
   refresh()
+  function session.selected_note()
+    return displayed_notes[selected_row]
+  end
+
+  function session.is_focused()
+    return vim.api.nvim_get_current_buf() == controller.pane.buf
+  end
+
+  function session.refresh()
+    refresh()
+  end
 
   for _, key in ipairs({ "j", "<Down>", "<Tab>" }) do
     controller:map("n", key, function()
@@ -181,7 +190,7 @@ function M.open(deps)
   end
 
   controller:map("n", "<CR>", function()
-    local note = displayed_notes[selected_row]
+    local note = session.selected_note()
     if not note then
       return
     end
@@ -191,18 +200,23 @@ function M.open(deps)
   end)
 
   controller:map("n", "dd", function()
-    local note = displayed_notes[selected_row]
+    local note = session.selected_note()
     if not note then
       return
     end
 
     deps.delete_note(note)
+    if controller.closed then
+      return
+    end
     refresh()
   end)
 
   controller:map({ "n", "i" }, "<Esc>", function()
     controller:close()
   end)
+
+  return session
 end
 
 return M

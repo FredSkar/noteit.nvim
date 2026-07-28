@@ -32,6 +32,19 @@ M.config = vim.deepcopy(defaults)
 M.notes = {}
 local note_buffer_savers = {}
 local autocmds_registered = false
+local active_note_list
+
+local function refresh_active_note_list()
+  if active_note_list then
+    active_note_list.refresh()
+  end
+end
+
+local function selected_list_note()
+  if active_note_list and active_note_list.is_focused() then
+    return active_note_list.selected_note()
+  end
+end
 
 local function place_note(buf, note)
   local opts = {
@@ -103,6 +116,7 @@ local function create_note(buf, filename, lnum, text)
   place_note(buf, note)
   table.insert(M.notes, note)
   M.save_notes()
+  refresh_active_note_list()
   return note
 end
 
@@ -116,6 +130,7 @@ local function update_note(note, text, buf)
   end
 
   M.save_notes()
+  refresh_active_note_list()
 end
 
 local function delete_note(note, buf)
@@ -136,6 +151,7 @@ local function delete_note(note, buf)
   end
 
   M.save_notes()
+  refresh_active_note_list()
 end
 
 ------------------------------------------------------------
@@ -417,6 +433,12 @@ end
 -- Add a note at current line
 ------------------------------------------------------------
 function M.add_note()
+  local selected_note = selected_list_note()
+  if selected_note then
+    M.edit_note(selected_note)
+    return
+  end
+
   local buf = vim.api.nvim_get_current_buf()
   local file = vim.api.nvim_buf_get_name(buf)
   local line = vim.api.nvim_win_get_cursor(0)[1]
@@ -442,6 +464,14 @@ end
 -- Remove note from current line
 ------------------------------------------------------------
 function M.remove_note(selected_note)
+  if selected_note and (not selected_note.filename or not selected_note.lnum) then
+    selected_note = nil
+  end
+
+  if not selected_note then
+    selected_note = selected_list_note()
+  end
+
   if selected_note then
     delete_note(selected_note)
     return
@@ -465,6 +495,12 @@ end
 -- Show note for note at current line
 ------------------------------------------------------------
 function M.show_note()
+  local selected_note = selected_list_note()
+  if selected_note then
+    M.edit_note(selected_note)
+    return
+  end
+
   local buf = vim.api.nvim_get_current_buf()
   local file = vim.api.nvim_buf_get_name(buf)
   local line = vim.api.nvim_win_get_cursor(0)[1]
@@ -484,7 +520,17 @@ end
 -- Show notes in quickfix
 ------------------------------------------------------------
 function M.show_notes()
-  note_list.open({
+  if #M.notes == 0 then
+    vim.notify("No notes available", vim.log.levels.WARN)
+    return
+  end
+
+  if active_note_list then
+    active_note_list.refresh()
+    return
+  end
+
+  active_note_list = note_list.open({
     config = M.config,
     notes = function()
       return M.notes
@@ -495,6 +541,9 @@ function M.show_notes()
     note_preview = build_note_preview,
     render_file_preview = render_base_file_preview,
     ui_namespace = ui_namespace,
+    on_close = function()
+      active_note_list = nil
+    end,
   })
 end
 
