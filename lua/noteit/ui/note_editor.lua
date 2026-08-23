@@ -5,74 +5,15 @@ local floating = require("noteit.ui.floating")
 local M = {}
 local note_buffer_savers = {}
 
---- Build a line-numbered source preview centered around the target line.
+--- Render a source-file preview and highlight the note's line with an extmark.
+-- @param pane table the preview pane, as returned by `floating.open`
 -- @param filename string the file to preview
--- @param lnum number the target line to center the preview on
--- @param max_height number the maximum number of preview lines
--- @param top_padding number lines to keep above the target line, like `'scrolloff'`
+-- @param lnum number the note's line number
+-- @param spec table the pane layout spec, used for `spec.height`
+-- @param top_padding number lines to keep above the target line
 -- @param file_lines table|nil pre-read file lines, to avoid re-reading the file
--- @return table the formatted preview lines
--- @return number the 1-based row of the target line within the returned lines
--- @local
---local function build_file_preview(filename, lnum, max_height, top_padding, file_lines)
---  local ok = true
---  if file_lines == nil then
---    ok, file_lines = pcall(vim.fn.readfile, filename)
---  end
---
---  if not ok or type(file_lines) ~= "table" or #file_lines == 0 then
---    return { "[unable to load preview for " .. filename .. "]" }, 1
---  end
---
---  local line_count = #file_lines
---  local target_line = math.max(1, math.min(lnum or 1, line_count))
---  local visible_height = math.max(1, math.min(max_height or line_count, line_count))
---  local lines_before = math.min(math.max(0, top_padding or 0), visible_height - 1)
---  local lines_after = visible_height - 1 - lines_before
---  local start_line = target_line - lines_before
---  local end_line = target_line + lines_after
---
---  if start_line < 1 then
---    end_line = math.min(line_count, end_line + (1 - start_line))
---    start_line = 1
---  end
---
---  if end_line > line_count then
---    start_line = math.max(1, start_line - (end_line - line_count))
---    end_line = line_count
---  end
---
---  local lines = {}
---  for i = start_line, end_line do
---    lines[#lines + 1] = string.format("%4d │ %s", i, file_lines[i] or "")
---  end
---
---  return lines, target_line - start_line + 1
---end
---
------ Render a source-file preview and highlight the note's line.
----- @param pane table the preview pane, as returned by `floating.open`
----- @param filename string the file to preview
----- @param lnum number the note's line number
----- @param spec table the pane layout spec, used for `spec.height`
----- @param top_padding number lines to keep above the target line
----- @param file_lines table|nil pre-read file lines, to avoid re-reading the file
----- @param ui_namespace number the extmark namespace used for highlights
---function M.render_file_preview(pane, filename, lnum, spec, top_padding, file_lines, ui_namespace)
---  local lines, highlight_row = build_file_preview(filename, lnum, spec.height, top_padding, file_lines)
---  floating.update(pane, spec)
---  floating.render(pane, lines, {
---    readonly = true,
---    filetype = vim.filetype.match({ filename = filename }) or "text",
---    namespace = ui_namespace,
---    highlights = {
---      { group = "Visual", line = highlight_row - 1 },
---    },
---  })
---end
-
---- Render a source-file preview and center the view on the note's line.
-function M.render_file_preview(pane, filename, lnum, spec, top_padding, file_lines)
+-- @param ui_namespace number the extmark namespace used for the line highlight
+function M.render_file_preview(pane, filename, lnum, spec, top_padding, file_lines, ui_namespace)
   if file_lines == nil then
     local ok, lines = pcall(vim.fn.readfile, filename)
     file_lines = ok and lines or nil
@@ -94,8 +35,12 @@ function M.render_file_preview(pane, filename, lnum, spec, top_padding, file_lin
   local target_line = math.max(1, math.min(lnum or 1, line_count))
 
   vim.wo[pane.win].number = true
-  vim.wo[pane.win].cursorline = true
   vim.wo[pane.win].scrolloff = top_padding or 0
+
+  vim.api.nvim_buf_clear_namespace(pane.buf, ui_namespace, 0, -1)
+  vim.api.nvim_buf_set_extmark(pane.buf, ui_namespace, target_line - 1, 0, {
+    line_hl_group = "Visual",
+  })
 
   vim.api.nvim_win_set_cursor(pane.win, { target_line, 0 })
   vim.api.nvim_win_call(pane.win, function()
