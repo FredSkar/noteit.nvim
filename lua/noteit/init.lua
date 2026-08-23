@@ -1,3 +1,5 @@
+--- Public API for adding, editing, removing, and listing project notes.
+-- @module noteit
 local note_editor = require("noteit.ui.note_editor")
 local note_list = require("noteit.ui.note_list")
 local note_state = require("noteit.state")
@@ -31,12 +33,17 @@ M.config = vim.deepcopy(defaults)
 
 local active_note_list
 
+--- Refresh the open note list after the note data changes.
+-- @local
 local function refresh_active_note_list()
   if active_note_list then
     active_note_list.refresh()
   end
 end
 
+--- Return the note selected in the list when that list has focus.
+-- @return table|nil the selected note, or `nil` if no list is focused
+-- @local
 local function selected_list_note()
   if active_note_list and active_note_list.is_focused() then
     return active_note_list.selected_note()
@@ -54,6 +61,11 @@ local state = note_state.new({
 
 M.notes = state.notes
 
+--- Open the note editor and connect its submit callback to the caller.
+-- @param initial_text string|nil the text to prefill the editor with
+-- @param preview table|nil `{ filename, lnum }` for the source preview
+-- @param on_submit function called with the submitted text
+-- @local
 local function open_note_editor(initial_text, preview, on_submit)
   note_editor.open(initial_text, {
     config = M.config,
@@ -63,9 +75,8 @@ local function open_note_editor(initial_text, preview, on_submit)
   })
 end
 
-------------------------------------------------------------
--- Setup function for user configuration
-------------------------------------------------------------
+--- Merge user options with the plugin defaults and load persisted notes.
+-- @param opts table|nil user configuration overrides
 function M.setup(opts)
   local config_opts = vim.deepcopy(opts or {})
   config_opts.base_dir = nil
@@ -73,13 +84,14 @@ function M.setup(opts)
   M.load_notes()
 end
 
+--- Save the current note-editor buffer.
+-- @param bufnr number|nil the note-editor buffer; defaults to the current buffer
 function M.SaveNote(bufnr)
   note_editor.save(bufnr)
 end
 
-----------------------------------------------------------
--- Edit already existsing note
-----------------------------------------------------------
+--- Open an existing note for editing, deleting it when submitted empty.
+-- @param note table the note to edit
 function M.edit_note(note)
   open_note_editor(note.note, { filename = note.filename, lnum = note.lnum }, function(updated_text)
     if updated_text ~= "" then
@@ -93,9 +105,7 @@ function M.edit_note(note)
   end)
 end
 
-------------------------------------------------------------
--- Add a note at current line
-------------------------------------------------------------
+--- Add a note at the current line, or edit an existing/selected note.
 function M.add_note()
   local selected_note = selected_list_note()
   if selected_note then
@@ -124,9 +134,8 @@ function M.add_note()
   end)
 end
 
-------------------------------------------------------------
--- Remove note from current line
-------------------------------------------------------------
+--- Remove the selected note or the note at the current line.
+-- @param selected_note table|nil an explicit note to remove, bypassing lookup
 function M.remove_note(selected_note)
   if selected_note and (not selected_note.filename or not selected_note.lnum) then
     selected_note = nil
@@ -155,9 +164,7 @@ function M.remove_note(selected_note)
   end
 end
 
-------------------------------------------------------------
--- Show note for note at current line
-------------------------------------------------------------
+--- Edit the selected note or the note at the current line.
 function M.show_note()
   local selected_note = selected_list_note()
   if selected_note then
@@ -180,9 +187,7 @@ function M.show_note()
   vim.notify("No note at current line", vim.log.levels.WARN)
 end
 
-------------------------------------------------------------
--- Show notes in quickfix
-------------------------------------------------------------
+--- Open the interactive note list, or refresh it when already open.
 function M.show_notes()
   if #M.notes == 0 then
     vim.notify("No notes available", vim.log.levels.WARN)
@@ -213,13 +218,12 @@ function M.show_notes()
   })
 end
 
-------------------------------------------------------------
--- Persistence: Save and Load
-------------------------------------------------------------
+--- Persist all notes through the state module.
 function M.save_notes()
   state.save_notes()
 end
 
+--- Load persisted notes through the state module.
 function M.load_notes()
   state.load_notes()
 end

@@ -1,57 +1,112 @@
+--- Floating note editor with optional source-file preview.
+-- @module noteit.ui.note_editor
 local floating = require("noteit.ui.floating")
 
 local M = {}
 local note_buffer_savers = {}
 
-local function build_file_preview(filename, lnum, max_height, top_padding, file_lines)
-  local ok = true
+--- Build a line-numbered source preview centered around the target line.
+-- @param filename string the file to preview
+-- @param lnum number the target line to center the preview on
+-- @param max_height number the maximum number of preview lines
+-- @param top_padding number lines to keep above the target line, like `'scrolloff'`
+-- @param file_lines table|nil pre-read file lines, to avoid re-reading the file
+-- @return table the formatted preview lines
+-- @return number the 1-based row of the target line within the returned lines
+-- @local
+--local function build_file_preview(filename, lnum, max_height, top_padding, file_lines)
+--  local ok = true
+--  if file_lines == nil then
+--    ok, file_lines = pcall(vim.fn.readfile, filename)
+--  end
+--
+--  if not ok or type(file_lines) ~= "table" or #file_lines == 0 then
+--    return { "[unable to load preview for " .. filename .. "]" }, 1
+--  end
+--
+--  local line_count = #file_lines
+--  local target_line = math.max(1, math.min(lnum or 1, line_count))
+--  local visible_height = math.max(1, math.min(max_height or line_count, line_count))
+--  local lines_before = math.min(math.max(0, top_padding or 0), visible_height - 1)
+--  local lines_after = visible_height - 1 - lines_before
+--  local start_line = target_line - lines_before
+--  local end_line = target_line + lines_after
+--
+--  if start_line < 1 then
+--    end_line = math.min(line_count, end_line + (1 - start_line))
+--    start_line = 1
+--  end
+--
+--  if end_line > line_count then
+--    start_line = math.max(1, start_line - (end_line - line_count))
+--    end_line = line_count
+--  end
+--
+--  local lines = {}
+--  for i = start_line, end_line do
+--    lines[#lines + 1] = string.format("%4d │ %s", i, file_lines[i] or "")
+--  end
+--
+--  return lines, target_line - start_line + 1
+--end
+--
+----- Render a source-file preview and highlight the note's line.
+---- @param pane table the preview pane, as returned by `floating.open`
+---- @param filename string the file to preview
+---- @param lnum number the note's line number
+---- @param spec table the pane layout spec, used for `spec.height`
+---- @param top_padding number lines to keep above the target line
+---- @param file_lines table|nil pre-read file lines, to avoid re-reading the file
+---- @param ui_namespace number the extmark namespace used for highlights
+--function M.render_file_preview(pane, filename, lnum, spec, top_padding, file_lines, ui_namespace)
+--  local lines, highlight_row = build_file_preview(filename, lnum, spec.height, top_padding, file_lines)
+--  floating.update(pane, spec)
+--  floating.render(pane, lines, {
+--    readonly = true,
+--    filetype = vim.filetype.match({ filename = filename }) or "text",
+--    namespace = ui_namespace,
+--    highlights = {
+--      { group = "Visual", line = highlight_row - 1 },
+--    },
+--  })
+--end
+
+--- Render a source-file preview and center the view on the note's line.
+function M.render_file_preview(pane, filename, lnum, spec, top_padding, file_lines)
   if file_lines == nil then
-    ok, file_lines = pcall(vim.fn.readfile, filename)
+    local ok, lines = pcall(vim.fn.readfile, filename)
+    file_lines = ok and lines or nil
   end
 
-  if not ok or type(file_lines) ~= "table" or #file_lines == 0 then
-    return { "[unable to load preview for " .. filename .. "]" }, 1
+  floating.update(pane, spec)
+
+  if not file_lines then
+    floating.render(pane, { "[unable to load preview for " .. filename .. "]" }, { readonly = true })
+    return
   end
+
+  floating.render(pane, file_lines, {
+    readonly = true,
+    filetype = vim.filetype.match({ filename = filename }) or "text",
+  })
 
   local line_count = #file_lines
   local target_line = math.max(1, math.min(lnum or 1, line_count))
-  local visible_height = math.max(1, math.min(max_height or line_count, line_count))
-  local lines_before = math.min(math.max(0, top_padding or 0), visible_height - 1)
-  local lines_after = visible_height - 1 - lines_before
-  local start_line = target_line - lines_before
-  local end_line = target_line + lines_after
 
-  if start_line < 1 then
-    end_line = math.min(line_count, end_line + (1 - start_line))
-    start_line = 1
-  end
+  vim.wo[pane.win].number = true
+  vim.wo[pane.win].cursorline = true
+  vim.wo[pane.win].scrolloff = top_padding or 0
 
-  if end_line > line_count then
-    start_line = math.max(1, start_line - (end_line - line_count))
-    end_line = line_count
-  end
-
-  local lines = {}
-  for i = start_line, end_line do
-    lines[#lines + 1] = string.format("%4d │ %s", i, file_lines[i] or "")
-  end
-
-  return lines, target_line - start_line + 1
+  vim.api.nvim_win_set_cursor(pane.win, { target_line, 0 })
+  vim.api.nvim_win_call(pane.win, function()
+    vim.cmd("normal! zz")
+  end)
 end
 
-function M.render_file_preview(pane, filename, lnum, spec, top_padding, file_lines, ui_namespace)
-  local lines, highlight_row = build_file_preview(filename, lnum, spec.height, top_padding, file_lines)
-  floating.update(pane, spec)
-  floating.render(pane, lines, {
-    readonly = true,
-    filetype = vim.filetype.match({ filename = filename }) or "text",
-    namespace = ui_namespace,
-    highlights = {
-      { group = "Visual", line = highlight_row - 1 },
-    },
-  })
-end
-
+--- Convert a note's text into the fixed-height lines shown in the list.
+-- @param note table the note whose text should be rendered
+-- @param max_height number the fixed number of lines to return
+-- @return table the note's text, split into `max_height` lines
 function M.build_note_preview(note, max_height)
   local text = (note and note.note) or ""
   local lines = vim.split(text, "\n", { plain = true, trimempty = false })
@@ -73,6 +128,9 @@ function M.build_note_preview(note, max_height)
   return preview_lines
 end
 
+--- Open a floating note editor and optionally pair it with a source preview.
+-- @param initial_text string|nil the text to prefill the editor with
+-- @param opts table `config`, `preview`, `ui_namespace`, and `on_submit`
 function M.open(initial_text, opts)
   local preview_top_padding = vim.wo.scrolloff
   local layout = floating.editor_layout(
@@ -102,6 +160,8 @@ function M.open(initial_text, opts)
   local float_buf, float_win = panes.editor.buf, panes.editor.win
 
   local closing_pair = false
+  --- Close the editor and its optional preview exactly once.
+  -- @local
   local function close_note_pair()
     if closing_pair then
       return
@@ -159,6 +219,9 @@ function M.open(initial_text, opts)
   })
 
   local submitted = false
+  --- Submit the editor contents once and close all editor panes.
+  -- @param text string the submitted note text
+  -- @local
   local function finish(text)
     if submitted then
       return
@@ -181,6 +244,8 @@ function M.open(initial_text, opts)
   end, {})
 end
 
+--- Submit a registered note-editor buffer.
+-- @param bufnr number|nil the note-editor buffer; defaults to the current buffer
 function M.save(bufnr)
   local target_buf = bufnr or vim.api.nvim_get_current_buf()
   if not vim.api.nvim_buf_is_valid(target_buf) then
@@ -197,6 +262,8 @@ function M.save(bufnr)
   save()
 end
 
+--- Open a note's source file and move the cursor to its recorded line.
+-- @param note table the note to navigate to
 function M.goto_note(note)
   if not note or not note.filename or note.filename == "" then
     return

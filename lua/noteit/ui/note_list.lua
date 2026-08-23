@@ -1,7 +1,13 @@
+--- Interactive floating note list with navigation and previews.
+-- @module noteit.ui.note_list
 local floating = require("noteit.ui.floating")
 
 local M = {}
 
+--- Open an interactive note list using the supplied state and UI callbacks.
+-- @param deps table `config`, `notes`, `relative_filename`, `delete_note`,
+-- `goto_note`, `note_preview`, `render_file_preview`, `ui_namespace`, `on_close`
+-- @return table the session, exposing `selected_note`, `is_focused`, `refresh`
 function M.open(deps)
   local config = deps.config
   local preview_top_padding = vim.wo.scrolloff
@@ -22,6 +28,10 @@ function M.open(deps)
   local controller
   local session = {}
 
+  --- Read and cache source lines for the currently selected note.
+  -- @param filename string the file to read
+  -- @return table|false the file's lines, or `false` if it could not be read
+  -- @local
   local function file_lines(filename)
     if filename ~= cached_filename then
       cached_filename = filename
@@ -32,6 +42,9 @@ function M.open(deps)
     return cached_file_lines
   end
 
+  --- Render note locations and the current selection highlight.
+  -- @param selected_index number|nil the row to highlight as selected
+  -- @local
   local function render_note_list(selected_index)
     local list_lines = {}
     local highlights = {}
@@ -60,6 +73,8 @@ function M.open(deps)
     })
   end
 
+  --- Refresh the selected note's note and source previews.
+  -- @local
   local function sync_selected_previews()
     if not vim.api.nvim_win_is_valid(panes.list.win) then
       controller:close()
@@ -121,6 +136,8 @@ function M.open(deps)
     end
   end
 
+  --- Rebuild the displayed-note snapshot and refresh all panes.
+  -- @local
   local function refresh()
     displayed_notes = {}
     for i, note in ipairs(deps.notes()) do
@@ -137,6 +154,9 @@ function M.open(deps)
     sync_selected_previews()
   end
 
+  --- Move the selection while keeping it within the displayed notes.
+  -- @param delta number the number of rows to move by (negative moves up)
+  -- @local
   local function move_selection(delta)
     if #displayed_notes == 0 then
       return
@@ -165,14 +185,20 @@ function M.open(deps)
   })
 
   refresh()
+
+  --- Return the currently selected note.
+  -- @return table|nil the selected note, if any
   function session.selected_note()
     return displayed_notes[selected_row]
   end
 
+  --- Check whether the hidden controller buffer currently has focus.
+  -- @return boolean whether the list's controller buffer is focused
   function session.is_focused()
     return vim.api.nvim_get_current_buf() == controller.pane.buf
   end
 
+  --- Refresh the list after notes are added, edited, or deleted.
   function session.refresh()
     refresh()
   end
