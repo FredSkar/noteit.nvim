@@ -116,11 +116,11 @@ function M.list_layout(style, ratio, note_preview_height, with_source_preview, w
 
   local list_height, note_height = frame.height, 0
   if with_note_preview then
-    list_height, note_height = split(frame.height, frame.gap_y, 1 - (note_preview_height or 5) / frame.height)
+    list_height, note_height = split(frame.height, frame.gap_y, 1 - (note_preview_height) / frame.height)
   end
 
   if note_height > 0 then
-    note_height = math.min(note_preview_height or 5, note_height)
+    note_height = math.min(note_preview_height, note_height)
     list_height = frame.height - note_height - frame.gap_y
   end
 

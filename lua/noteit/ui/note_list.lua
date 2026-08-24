@@ -14,7 +14,7 @@ function M.open(deps)
   local layout = floating.list_layout(
     config.window_style,
     config.preview_split_ratio,
-    5,
+    config.note_preview_lines,
     config.file_preview,
     config.list_note_preview
   )
@@ -173,7 +173,7 @@ function M.open(deps)
       layout = floating.list_layout(
         config.window_style,
         config.preview_split_ratio,
-        5,
+        config.note_preview_lines,
         config.file_preview,
         config.list_note_preview
       )

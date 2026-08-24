@@ -19,6 +19,7 @@ local defaults = {
   file_preview = true,
   list_note_preview = true,
   preview_split_ratio = 0.6,
+  note_preview_lines = 10,
 
   window_style = {
     width = 0.8,
