@@ -3,7 +3,6 @@
 local floating = require("noteit.ui.floating")
 
 local M = {}
-local note_buffer_savers = {}
 
 --- Render a source-file preview and highlight the note's line with an extmark.
 -- @param pane table the preview pane, as returned by `floating.open`
@@ -126,19 +125,11 @@ function M.open(initial_text, opts)
   vim.bo[float_buf].swapfile = false
 
   if initial_text then
-    vim.api.nvim_buf_set_lines(float_buf, 0, -1, false, { initial_text })
-    vim.api.nvim_win_set_cursor(float_win, { 1, #initial_text })
+    local initial_lines = vim.split(initial_text, "\n", { plain = true })
+    vim.api.nvim_buf_set_lines(float_buf, 0, -1, false, initial_lines)
+    vim.api.nvim_win_set_cursor(float_win, { #initial_lines, #initial_lines[#initial_lines] })
     vim.bo[float_buf].modified = false
   end
-
-  vim.api.nvim_create_autocmd("BufWipeout", {
-    buffer = float_buf,
-    once = true,
-    callback = function()
-      note_buffer_savers[float_buf] = nil
-      close_note_pair()
-    end,
-  })
 
   vim.api.nvim_create_autocmd("BufWinLeave", {
     buffer = float_buf,
@@ -159,52 +150,11 @@ function M.open(initial_text, opts)
     once = true,
     callback = function()
       vim.bo[float_buf].modified = false
-      M.save(float_buf)
+      local lines = vim.api.nvim_buf_get_lines(float_buf, 0, -1, false)
+      local text = table.concat(lines, "\n"):gsub("^%s*(.-)%s*$", "%1")
+      opts.on_submit(text)
     end,
   })
-
-  local submitted = false
-  --- Submit the editor contents once and close all editor panes.
-  -- @param text string the submitted note text
-  -- @local
-  local function finish(text)
-    if submitted then
-      return
-    end
-
-    submitted = true
-    note_buffer_savers[float_buf] = nil
-    floating.close(panes)
-    opts.on_submit(text)
-  end
-
-  note_buffer_savers[float_buf] = function()
-    local lines = vim.api.nvim_buf_get_lines(float_buf, 0, -1, false)
-    local text = table.concat(lines, " "):gsub("^%s*(.-)%s*$", "%1")
-    finish(text)
-  end
-
-  vim.api.nvim_buf_create_user_command(float_buf, "SaveNote", function()
-    M.save(float_buf)
-  end, {})
-end
-
---- Submit a registered note-editor buffer.
--- @param bufnr number|nil the note-editor buffer; defaults to the current buffer
-function M.save(bufnr)
-  local target_buf = bufnr or vim.api.nvim_get_current_buf()
-  if not vim.api.nvim_buf_is_valid(target_buf) then
-    vim.notify("Noteit: invalid buffer", vim.log.levels.WARN)
-    return
-  end
-
-  local save = note_buffer_savers[target_buf]
-  if type(save) ~= "function" then
-    vim.notify("Noteit: SaveNote is only available in note buffers", vim.log.levels.WARN)
-    return
-  end
-
-  save()
 end
 
 --- Open a note's source file and move the cursor to its recorded line.

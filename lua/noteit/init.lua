@@ -84,12 +84,6 @@ function M.setup(opts)
   M.load_notes()
 end
 
---- Save the current note-editor buffer.
--- @param bufnr number|nil the note-editor buffer; defaults to the current buffer
-function M.SaveNote(bufnr)
-  note_editor.save(bufnr)
-end
-
 --- Open an existing note for editing, deleting it when submitted empty.
 -- @param note table the note to edit
 function M.edit_note(note)

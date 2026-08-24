@@ -123,7 +123,6 @@ function M.new(opts)
     local note = {
       filename = filename,
       lnum = lnum,
-      text = config().symbol .. " " .. text,
       note = text,
     }
 
@@ -140,7 +139,6 @@ function M.new(opts)
   -- @param buf number|nil the buffer holding the note's extmark, if loaded
   function state.update_note(note, text, buf)
     note.note = text
-    note.text = config().symbol .. " " .. text
 
     local source_buf = buf or state.loaded_note_buffer(note.filename)
     if source_buf then
