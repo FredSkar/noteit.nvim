@@ -11,18 +11,28 @@ with what you observe at runtime, that's a bug — please report it.
 
 ## The big idea
 
-A single module, `lua/noteit/ui/handler.lua`, owns **all** window mechanics:
-opening/closing/resizing floating windows, computing their layout, wiring
-keymaps, and hiding the cursor. It is the only file that calls
-`nvim_open_win`, `nvim_win_set_config`, or `nvim_win_close`.
+The window/pane system is split into two layers:
+
+- **`lua/noteit/ui/window.lua`**: all low-level floating-window mechanics —
+  frame/grid layout math, opening/closing/updating floating windows, buffer
+  rendering, and cursor hiding. It is the only file that calls
+  `nvim_open_win`, `nvim_win_set_config`, or `nvim_win_close`, and it knows
+  nothing about panes, `setup`/`render` callbacks, or actions — it only
+  deals in buffers, windows, rectangles, and raw config tables.
+- **`lua/noteit/ui/handler.lua`**: pane orchestration. It turns a `panes`
+  config into a running window group by calling into `window.lua` for every
+  actual window operation, running each pane module's `setup`/`render`
+  callbacks, routing `ctx.dispatch` calls to the caller's `actions`, and
+  closing everything down together. This is the module pane authors and
+  `init.lua` actually interact with (`handler.open(...)`).
 
 Everything else is a **pane**: a small, self-contained Lua module under
 `lua/noteit/ui/panes/` that implements at most two functions, `setup` and
 `render`. A pane never touches another pane's buffer or window, and never
-calls a low-level window API directly. Panes only talk to the handler
-through a `ctx` table the handler passes to `setup`/`render`, and to each
-other only through a shared, plain-Lua state table (`ctx.state`) and an
-explicit action-dispatch mechanism (`ctx.dispatch`).
+calls `window.lua` or a low-level window API directly. Panes only talk to
+the handler through a `ctx` table the handler passes to `setup`/`render`,
+and to each other only through a shared, plain-Lua state table
+(`ctx.state`) and an explicit action-dispatch mechanism (`ctx.dispatch`).
 
 ```
 lua/noteit/
@@ -30,13 +40,16 @@ lua/noteit/
                               calls handler.open()
   state.lua                 -- note storage/persistence (unchanged)
   ui/
-    handler.lua              -- the central handler
+    window.lua               -- low-level floating-window mechanics (layout,
+                              -- open/close/update, rendering, cursor hiding)
+    handler.lua               -- pane orchestration on top of window.lua
     panes/
       note_list.lua          -- interactive list of notes
       note_preview.lua        -- read-only preview of the selected note's text
       file_preview.lua        -- read-only preview of a note's source file/line
       note_editor.lua         -- writable buffer for creating/editing a note
 ```
+
 
 ## Windows, panes, and the grid
 
@@ -112,7 +125,7 @@ If a pane is the *only* pane in its column and doesn't set `row`, it spans
 the column's full height (e.g. `file_preview` in both windows above). The
 symmetric case — spanning a full row's width by omitting `col` — isn't
 implemented; no current layout needs it, and it was left out to keep the
-grid math simple. Add it to `compute_grid` in `handler.lua` if a future pane
+grid math simple. Add it to `compute_grid` in `window.lua` if a future pane
 needs it.
 
 ## The pane module contract
