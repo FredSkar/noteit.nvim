@@ -1,10 +1,37 @@
 --- Public API for adding, editing, removing, and listing project notes.
 -- @module noteit
-local note_editor = require("noteit.ui.note_editor")
-local note_list = require("noteit.ui.note_list")
+local handler = require("noteit.ui.handler")
 local note_state = require("noteit.state")
 
 local M = {}
+
+--- Clamp a fraction to a usable range, matching the source/file preview's
+-- historical width bounds (10%-90% of the window).
+-- @local
+local function preview_width_fraction(ratio)
+  return math.max(0.1, math.min(ratio or 0.35, 0.9))
+end
+
+--- Open a note's source file and move the cursor to its recorded line.
+-- This is domain logic (navigating a note to its source), not UI logic, so
+-- it lives here rather than in a pane module; it is registered as the
+-- `goto_note` action for the note-list window.
+-- @param note table the note to navigate to
+-- @local
+local function goto_note(note)
+  if not note or not note.filename or note.filename == "" then
+    return
+  end
+
+  vim.cmd("edit " .. vim.fn.fnameescape(note.filename))
+
+  if note.lnum and note.lnum > 0 then
+    local line_count = vim.api.nvim_buf_line_count(0)
+    local target_line = math.min(note.lnum, line_count)
+    vim.api.nvim_win_set_cursor(0, { target_line, 0 })
+    vim.cmd("normal! zv")
+  end
+end
 
 -- Namespace for virtual text as the directory where nvim was launched.
 local path_hash = vim.fn.sha256(vim.fn.getcwd()):sub(1, 16)
@@ -38,7 +65,7 @@ local active_note_list
 -- @local
 local function refresh_active_note_list()
   if active_note_list then
-    active_note_list.refresh()
+    active_note_list.render()
   end
 end
 
@@ -47,7 +74,7 @@ end
 -- @local
 local function selected_list_note()
   if active_note_list and active_note_list.is_focused() then
-    return active_note_list.selected_note()
+    return active_note_list.state.note
   end
 end
 
@@ -68,11 +95,30 @@ M.notes = state.notes
 -- @param on_submit function called with the submitted text
 -- @local
 local function open_note_editor(initial_text, preview, on_submit)
-  note_editor.open(initial_text, {
-    config = M.config,
-    preview = preview,
-    ui_namespace = ui_namespace,
-    on_submit = on_submit,
+  local panes = {
+    { type = "note_editor", col = 1, enter = true },
+  }
+  if M.config.file_preview and preview and preview.filename and preview.filename ~= "" then
+    panes[#panes + 1] = {
+      type = "file_preview",
+      col = 2,
+      width = preview_width_fraction(M.config.preview_split_ratio),
+    }
+  end
+
+  handler.open({
+    window_style = M.config.window_style,
+    hide_cursor = true,
+    panes = panes,
+    data = {
+      initial_text = initial_text,
+      preview = preview,
+      ui_namespace = ui_namespace,
+      top_padding = vim.wo.scrolloff,
+    },
+    actions = {
+      submit_note = on_submit,
+    },
   })
 end
 
@@ -190,23 +236,45 @@ function M.show_notes()
   end
 
   if active_note_list then
-    active_note_list.refresh()
+    active_note_list.render()
     return
   end
 
-  active_note_list = note_list.open({
-    config = M.config,
-    notes = function()
-      return M.notes
-    end,
-    relative_filename = state.relative_note_filename,
-    delete_note = M.remove_note,
-    goto_note = note_editor.goto_note,
-    note_preview = note_editor.build_note_preview,
-    render_file_preview = function(pane, filename, lnum, spec, top_padding, file_lines)
-      note_editor.render_file_preview(pane, filename, lnum, spec, top_padding, file_lines, ui_namespace)
-    end,
-    ui_namespace = ui_namespace,
+  local panes = {
+    { type = "note_list", col = 1, row = 1, enter = true },
+  }
+  if M.config.list_note_preview then
+    panes[#panes + 1] = {
+      type = "note_preview",
+      col = 1,
+      row = 2,
+      max_height = M.config.note_preview_lines,
+    }
+  end
+  if M.config.file_preview then
+    panes[#panes + 1] = {
+      type = "file_preview",
+      col = 2,
+      width = preview_width_fraction(M.config.preview_split_ratio),
+    }
+  end
+
+  active_note_list = handler.open({
+    window_style = M.config.window_style,
+    hide_cursor = true,
+    panes = panes,
+    data = {
+      notes = function()
+        return M.notes
+      end,
+      relative_filename = state.relative_note_filename,
+      ui_namespace = ui_namespace,
+      top_padding = vim.wo.scrolloff,
+    },
+    actions = {
+      goto_note = goto_note,
+      delete_note = M.remove_note,
+    },
     on_close = function()
       active_note_list = nil
     end,
