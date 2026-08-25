@@ -68,6 +68,7 @@ Each entry in `handler.open()`'s `panes` array is a plain table:
 | `max_height` | rows, optional   | —       | caps this row's computed height at a fixed row count; see below |
 | `enter`      | boolean          | `false` | focus this pane when the window opens; exactly one pane per window should set this |
 | `focusable`  | boolean, optional | pane module's `style.focusable` (default `true`) | can this pane's window receive focus at all |
+| `hide_cursor` | boolean, optional | `false` | only meaningful on the `enter` pane: minimize the cursor for as long as this window stays open (see "Cursor hiding" below) |
 | `border`     | string, optional | pane module's `style.border` (default `"rounded"`) | override the floating window's border |
 | `title`      | string, optional | pane module's `style.title` | override the floating window's title |
 
@@ -221,7 +222,7 @@ From `init.lua`'s `M.show_notes`:
 
 ```lua
 local panes = {
-  { type = "note_list", col = 1, row = 1, enter = true },
+  { type = "note_list", col = 1, row = 1, enter = true, hide_cursor = true },
 }
 if M.config.list_note_preview then
   panes[#panes + 1] = {
@@ -241,7 +242,6 @@ end
 
 active_note_list = handler.open({
   window_style = M.config.window_style,
-  hide_cursor = true,
   panes = panes,
   data = {
     notes = function() return M.notes end,
@@ -285,7 +285,6 @@ end
 
 handler.open({
   window_style = M.config.window_style,
-  hide_cursor = true,
   panes = panes,
   data = {
     initial_text = initial_text,
@@ -309,15 +308,22 @@ needed in the pane module.
 
 ## Cursor hiding
 
-Ported unchanged (behaviorally) from the original `floating.lua`: while
-`hide_cursor = true` and any pane in the window is open, the handler
-shrinks the cursor to a near-invisible 1%-height hairline
-(`guicursor` `hor1-...-blinkon0` for every mode) rather than trying to
-recolor it — cursor *shape* is portable across terminals, cursor *color*
-is not (VTE-based terminals like GNOME Terminal ignore OSC 12 color
-requests entirely). Nested `push_hidden_cursor`/`pop_hidden_cursor` calls
-are reference-counted so the original `guicursor` is restored exactly once
-every window that requested hiding has closed.
+`hide_cursor` is a **per-pane** option (only meaningful on the pane that
+sets `enter = true`, since other panes never receive real cursor focus —
+see `focusable`). This lets a window mix an interactive pane that wants the
+cursor minimized (e.g. `note_list`, which uses the cursor position purely
+as internal selection state, not something the user should see moving) with
+a window whose entered pane is a normal editable buffer where the cursor
+should behave and look completely normal (`note_editor`).
+
+When set, the underlying mechanism is unchanged from the original
+`floating.lua`: the handler shrinks the cursor to a near-invisible
+1%-height hairline (`guicursor` `hor1-...-blinkon0` for every mode) rather
+than trying to recolor it — cursor *shape* is portable across terminals,
+cursor *color* is not (VTE-based terminals like GNOME Terminal ignore OSC
+12 color requests entirely). Nested `push_hidden_cursor`/`pop_hidden_cursor`
+calls are reference-counted so the original `guicursor` is restored exactly
+once every window that requested hiding has closed.
 
 ## Known, deliberate simplifications vs. the original implementation
 

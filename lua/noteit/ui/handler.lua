@@ -115,11 +115,17 @@ local function compute_grid(the_frame, panes)
     return nil
   end)
 
+  -- Fractions are resolved against the space actually available for panes,
+  -- i.e. the frame minus the gaps *between* columns/rows, so that pane
+  -- edges plus gaps add up to exactly the frame's size instead of
+  -- overflowing it by one gap per extra column/row.
+  local available_width = clamp(the_frame.width - the_frame.gap_x * (#column_order - 1), 1, the_frame.width)
+
   local rects = {}
   local x = the_frame.col
   for _, col in ipairs(column_order) do
     local indices = columns[col]
-    local column_width = clamp(math.floor(the_frame.width * column_width_fraction[col]), 1, the_frame.width)
+    local column_width = clamp(math.floor(available_width * column_width_fraction[col]), 1, available_width)
 
     if #indices == 1 and not panes[indices[1]].row then
       -- The only pane in this column and no row given: span the full height.
@@ -143,6 +149,8 @@ local function compute_grid(the_frame, panes)
         return panes[by_row[row]].height
       end)
 
+      local available_height = clamp(the_frame.height - the_frame.gap_y * (#row_order - 1), 1, the_frame.height)
+
       -- Resolve pixel heights, then cap any row with `max_height` and hand
       -- the reclaimed space back to rows with neither an explicit `height`
       -- nor a `max_height` (there is normally at most one such row per
@@ -152,7 +160,7 @@ local function compute_grid(the_frame, panes)
       local flexible_rows = {}
       for _, row in ipairs(row_order) do
         local pane = panes[by_row[row]]
-        local pane_height = clamp(math.floor(the_frame.height * row_height_fraction[row]), 1, the_frame.height)
+        local pane_height = clamp(math.floor(available_height * row_height_fraction[row]), 1, available_height)
         if pane.max_height then
           local capped = math.min(pane_height, pane.max_height)
           reclaimed = reclaimed + (pane_height - capped)
@@ -329,7 +337,7 @@ local session_id = 0
 -- @param opts table
 --   `window_style`: frame sizing/spacing, see `frame()`.
 --   `panes`: array of pane configs, each `{ type, col, row, width, height,
---     max_height, enter, focusable, border, title }`:
+--     max_height, enter, focusable, hide_cursor, border, title }`:
 --       - `type` (required): pane module name under `noteit.ui.panes.*`.
 --       - `col` (`1`|`2`, default `1`): grid column.
 --       - `row` (`1`|`2`, optional): grid row within the column; omit to
@@ -349,6 +357,11 @@ local session_id = 0
 --         Exactly one pane per window should normally set this.
 --       - `focusable` (boolean, optional): overrides the pane module's
 --         `style.focusable` default (`true` if neither is set).
+--       - `hide_cursor` (boolean, default `false`): only meaningful on the
+--         pane that sets `enter = true`. Minimizes the cursor (see
+--         `push_hidden_cursor`) for as long as this window stays open.
+--         Other panes never receive real cursor focus (see `focusable`),
+--         so this only needs to be set on the entered pane.
 --       - `border`/`title` (optional): override the pane module's
 --         `style.border`/`style.title`.
 --   `data`: arbitrary read-only table passed through as `ctx.opts` to every
@@ -360,8 +373,6 @@ local session_id = 0
 --   `actions`: table of named functions a pane can invoke via
 --     `ctx.dispatch(name, ...)` — the only way a pane may act outside its
 --     own window (e.g. opening a note's source file, deleting a note).
---   `hide_cursor` (boolean, default `false`): minimize the cursor while any
---     pane in this window is focused (see `push_hidden_cursor`).
 --   `on_close` (function, optional): called once when the window closes.
 -- @return table the session: `{ state, close, render, is_focused }`.
 --   `state` is the shared blackboard table passed to every pane as
@@ -387,6 +398,17 @@ function M.open(opts)
   }
   local group = vim.api.nvim_create_augroup("noteit_handler_" .. session_id, { clear = true })
   local rects = compute_grid(frame(opts.window_style or {}), panes)
+
+  -- Cursor hiding is a per-pane option (only meaningful on the `enter`
+  -- pane; see `M.open`'s docs), not a whole-window one, so a window can
+  -- freely mix panes that want it (e.g. an interactive list) with panes
+  -- that don't.
+  local should_hide_cursor = false
+  for _, pane in ipairs(panes) do
+    if pane.enter and pane.hide_cursor then
+      should_hide_cursor = true
+    end
+  end
 
   --- Build the `ctx` table passed to a pane's `setup`/`render` for this call.
   -- @local
@@ -512,7 +534,7 @@ function M.open(opts)
     end
     session.closed = true
 
-    if opts.hide_cursor then
+    if should_hide_cursor then
       pop_hidden_cursor()
     end
 
@@ -527,7 +549,7 @@ function M.open(opts)
     end
   end
 
-  if opts.hide_cursor then
+  if should_hide_cursor then
     push_hidden_cursor()
   end
 

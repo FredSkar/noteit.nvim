@@ -108,7 +108,6 @@ local function open_note_editor(initial_text, preview, on_submit)
 
   handler.open({
     window_style = M.config.window_style,
-    hide_cursor = true,
     panes = panes,
     data = {
       initial_text = initial_text,
@@ -241,7 +240,7 @@ function M.show_notes()
   end
 
   local panes = {
-    { type = "note_list", col = 1, row = 1, enter = true },
+    { type = "note_list", col = 1, row = 1, enter = true, hide_cursor = true },
   }
   if M.config.list_note_preview then
     panes[#panes + 1] = {
@@ -261,7 +260,6 @@ function M.show_notes()
 
   active_note_list = handler.open({
     window_style = M.config.window_style,
-    hide_cursor = true,
     panes = panes,
     data = {
       notes = function()
