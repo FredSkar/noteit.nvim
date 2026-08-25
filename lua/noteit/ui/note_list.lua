@@ -167,8 +167,10 @@ function M.open(deps)
   end
 
   controller = floating.controller({
+    pane = panes.list,
     panes = panes,
     on_close = deps.on_close,
+    hide_cursor = true,
     on_resize = function()
       layout = floating.list_layout(
         config.window_style,
@@ -192,10 +194,10 @@ function M.open(deps)
     return displayed_notes[selected_row]
   end
 
-  --- Check whether the hidden controller buffer currently has focus.
-  -- @return boolean whether the list's controller buffer is focused
+  --- Check whether the note list's window currently has focus.
+  -- @return boolean whether the list pane is focused
   function session.is_focused()
-    return vim.api.nvim_get_current_buf() == controller.pane.buf
+    return vim.api.nvim_get_current_buf() == panes.list.buf
   end
 
   --- Refresh the list after notes are added, edited, or deleted.

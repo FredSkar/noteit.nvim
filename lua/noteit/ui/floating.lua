@@ -116,7 +116,7 @@ function M.list_layout(style, ratio, note_preview_height, with_source_preview, w
 
   local list_height, note_height = frame.height, 0
   if with_note_preview then
-    list_height, note_height = split(frame.height, frame.gap_y, 1 - (note_preview_height) / frame.height)
+    list_height, note_height = split(frame.height, frame.gap_y, 1 - note_preview_height / frame.height)
   end
 
   if note_height > 0 then
@@ -170,6 +170,57 @@ function M.config(spec)
   end
 
   return config
+end
+
+local hidden_cursor_hl = "NoteitHiddenCursor"
+
+--- (Re)define a highlight group whose fg/bg match `Normal`, making the
+-- terminal-drawn cursor cell blend into the background. Recomputed on every
+-- call (cheap) so it tracks colorscheme changes. Only takes visible effect in
+-- terminals that honor OSC 12 cursor-color requests (e.g. kitty, alacritty,
+-- WezTerm); VTE-based terminals (GNOME Terminal, etc.) ignore it.
+-- @local
+local function ensure_hidden_cursor_highlight()
+  local normal = vim.api.nvim_get_hl(0, { name = "Normal", link = false })
+  vim.api.nvim_set_hl(0, hidden_cursor_hl, {
+    fg = normal.bg,
+    bg = normal.bg,
+    blend = 100,
+  })
+end
+
+local saved_guicursor
+local hidden_cursor_depth = 0
+
+--- Shrink the cursor to a near-invisible 1%-height hairline for every mode.
+-- Cursor color is not portable across terminals, but cursor *shape* is, so
+-- this is the most reliable way to minimize the cursor everywhere,
+-- including VTE-based terminals that ignore OSC 12 cursor-color requests.
+-- Calls nest; the original 'guicursor' is restored once all callers pop.
+function M.push_hidden_cursor()
+  ensure_hidden_cursor_highlight()
+
+  if hidden_cursor_depth == 0 then
+    saved_guicursor = vim.o.guicursor
+    local modes = { "n", "v", "i", "c", "ci", "cr", "o", "r", "sm", "t" }
+    local parts = {}
+    for _, mode in ipairs(modes) do
+      parts[#parts + 1] = mode .. ":hor1-" .. hidden_cursor_hl .. "-blinkon0"
+    end
+    vim.o.guicursor = table.concat(parts, ",")
+  end
+
+  hidden_cursor_depth = hidden_cursor_depth + 1
+end
+
+--- Undo one `M.push_hidden_cursor` call, restoring the original 'guicursor'
+-- once the outermost call has been popped.
+function M.pop_hidden_cursor()
+  hidden_cursor_depth = math.max(0, hidden_cursor_depth - 1)
+  if hidden_cursor_depth == 0 and saved_guicursor then
+    vim.o.guicursor = saved_guicursor
+    saved_guicursor = nil
+  end
 end
 
 --- Create a floating buffer and window from a pane specification.
@@ -240,45 +291,23 @@ end
 
 local controller_id = 0
 
---- Return a one-by-one offscreen pane used to capture list input.
--- @return table a pane spec placed just outside the visible UI
--- @local
-local function offscreen_config()
-  local width, height = ui_size()
-  return {
-    width = 1,
-    height = 1,
-    row = height,
-    col = width,
-    enter = true,
-    focusable = true,
-    border = "none",
-  }
-end
-
 --- Create a controller for mappings, cleanup, and resize handling.
--- @param opts table|nil `panes`, `on_close`, `on_resize`
--- @return table the controller, with `reposition`, `close`, and `map` methods
+-- @param opts table `pane` (the anchor pane for input and lifecycle), `panes`,
+-- `on_close`, `on_resize`, `hide_cursor` (minimize the cursor while open)
+-- @return table the controller, with `close` and `map` methods
 function M.controller(opts)
   opts = opts or {}
   controller_id = controller_id + 1
 
   local controller = {
-    pane = M.open(offscreen_config()),
+    pane = opts.pane,
     panes = opts.panes or {},
     closed = false,
   }
-  vim.bo[controller.pane.buf].bufhidden = "wipe"
-  vim.bo[controller.pane.buf].modifiable = false
   controller.group = vim.api.nvim_create_augroup("noteit_floating_controller_" .. controller_id, { clear = true })
 
-  --- Keep the controller pane offscreen while the visible panes resize.
-  function controller:reposition()
-    if self.closed then
-      return
-    end
-
-    M.update(self.pane, offscreen_config())
+  if opts.hide_cursor then
+    M.push_hidden_cursor()
   end
 
   --- Close the controller and all visible panes once.
@@ -288,15 +317,17 @@ function M.controller(opts)
     end
 
     self.closed = true
+    if opts.hide_cursor then
+      M.pop_hidden_cursor()
+    end
     if opts.on_close then
       opts.on_close()
     end
     M.close(self.panes)
-    M.close({ self.pane })
     pcall(vim.api.nvim_del_augroup_by_id, self.group)
   end
 
-  --- Add a buffer-local mapping to the controller pane.
+  --- Add a buffer-local mapping to the controller's anchor pane.
   function controller:map(modes, lhs, rhs)
     vim.keymap.set(modes, lhs, rhs, { buffer = self.pane.buf, silent = true })
   end
@@ -322,7 +353,6 @@ function M.controller(opts)
   vim.api.nvim_create_autocmd("VimResized", {
     group = controller.group,
     callback = function()
-      controller:reposition()
       if opts.on_resize then
         opts.on_resize()
       end
